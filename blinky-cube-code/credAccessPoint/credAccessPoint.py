@@ -1,6 +1,7 @@
 import usocket as socket    
 import network          
 from ubinascii import hexlify
+from time import sleep
 
 htmlUrlCode = {
     '20' : ' ',
@@ -149,9 +150,9 @@ def credWebSite(credList, apPassword):
                       percIndex = keyValue[1].find("%")
                   credList[keyValue[0]] = keyValue[1]
 
-          response = acceptedWebPage()
-          conn.send(response)
+          conn.send(acceptedWebPage())
           conn.close()
+          sleep(5)
           ap.active(False)
       else:
           response = web_page(credList)
