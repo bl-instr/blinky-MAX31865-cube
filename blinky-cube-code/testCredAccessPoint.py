@@ -1,11 +1,12 @@
 import ujson as json
-import credAccessPoint
+from BlinkyCubeCredsAccessPoint import BlinkyCubeCredsAccessPoint
 
 creds = {}
 with open('creds.json', 'r') as f:
     creds = json.load(f)
-
-credAccessPoint.credWebSite(creds,'blinky-lite')
+    
+credAp = BlinkyCubeCredsAccessPoint(creds,'blinky-lite')
+creds = credAp.serveWebSite()
 print(creds)
 with open('creds.json', 'w') as f:
     json.dump(creds, f)
