@@ -1,1 +1,1 @@
-{"cubeType": "cube", "wifiPassword": "blinky-lite", "trayName": "01", "mqttUsername": "blinky-lite-box-01", "mqttServer": "10.42.0.1", "box": "blinky-lite-box-01", "trayType": "blinky-MAX31865", "ssid": "blinky-play-01", "mqttPassword": "areallybadpassword"}
+{"cubeType": "cube", "wifiPassword": "oftqhpuy4cwr", "trayName": "RI-01", "mqttUsername": "blinkybox-RI-01", "trayType": "blinky-MAX31865", "mqttPassword": "oftqhpuy4cwr", "box": "blinkybox-RI-01", "country": "SE", "ssid": "blinkybox-RI-01", "mqttServer": "10.42.0.1"}

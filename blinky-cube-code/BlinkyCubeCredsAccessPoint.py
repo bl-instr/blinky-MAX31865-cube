@@ -51,6 +51,7 @@ class BlinkyCubeCredsAccessPoint:
         while self.ap.active() == False:
             pass
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)   #creating socket object
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind(('', 80))
         s.listen(5)
         post = False
@@ -87,11 +88,16 @@ class BlinkyCubeCredsAccessPoint:
               conn.send(self.__acceptedWebPage())
               conn.close()
               sleep(1)
-              self.ap.active(False)
           else:
               response = self.__web_page()
               conn.send(response)
               conn.close()
+        sleep(1)
+        self.ap.active(False)
+        while self.ap.active() == True:
+            pass
+        s.close()
+        sleep(1)
         return self.credList
     def __web_page(self):
         mac = hexlify(network.WLAN().config('mac'),':').decode()
@@ -116,6 +122,7 @@ class BlinkyCubeCredsAccessPoint:
         <table align=\"center\">"""
         html = html + self.__credLine("ssid",         "SSID")
         html = html + self.__credLine("wifiPassword", "Wifi Password")
+        html = html + self.__credLine("country", "Country")
         html = html + self.__credLine("mqttServer", "MQTT Server")
         html = html + self.__credLine("mqttUsername", "MQTT Username")
         html = html + self.__credLine("mqttPassword", "MQTT Password")
