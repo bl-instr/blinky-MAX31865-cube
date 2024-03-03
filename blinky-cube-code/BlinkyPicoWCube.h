@@ -12,6 +12,7 @@
 #define MQTT_LED_FLASH_MS     10
 #define WIRELESS_BLINK_MS     100
 #define MAX_NO_MQTT_ERRORS    5
+#define MAX_NO_CONNECTION_ATTEMPTS 5
 
 union SubscribeData
 {
@@ -86,6 +87,8 @@ class BlinkyPicoWCube
     int           g_wirelessBlinkMs = WIRELESS_BLINK_MS;
     int           g_maxNoMqttErrors = MAX_NO_MQTT_ERRORS;
     int           g_noMqttErrors = 0; 
+    int           g_maxConnectionAttempts = MAX_NO_CONNECTION_ATTEMPTS;
+    int           g_noConnectionAttempts = 0; 
     volatile unsigned long g_resetButtonDownTime = 0;    
 
     void          setupWifiAp();
@@ -113,6 +116,7 @@ class BlinkyPicoWCube
     void          setMqttLedFlashMs(int mqttLedFlashMs){g_mqttLedFlashMs = mqttLedFlashMs;};
     void          setWirelesBlinkMs(int wirelessBlinkMs){g_wirelessBlinkMs = wirelessBlinkMs;};
     void          setMaxNoMqttErrors(int maxNoMqttErrors){g_maxNoMqttErrors = maxNoMqttErrors;};
+    void          setMaxNoConnectionAttempts(int maxConnectionAttempts){g_maxConnectionAttempts = maxConnectionAttempts;};
     static void   checkForSettings();
     static void   publishToServer();
 
@@ -234,10 +238,10 @@ void BlinkyPicoWCube::loop()
           setCommLEDPin(g_commLEDState);
           g_publishNow = false;
           g_mqttClient.publish(g_mqttPublishTopic.c_str(), g_cubeData.buffer, g_cubeDataSize);
-          if (g_chattyCathy) Serial.print("Publishing to MQTT ");
-          if (g_chattyCathy) Serial.print(g_mqttPublishTopic);
-          if (g_chattyCathy) Serial.print(" ");
-          if (g_chattyCathy) Serial.println(g_cubeData.watchdog);
+//          if (g_chattyCathy) Serial.print("Publishing to MQTT ");
+//          if (g_chattyCathy) Serial.print(g_mqttPublishTopic);
+//          if (g_chattyCathy) Serial.print(" ");
+//          if (g_chattyCathy) Serial.println(g_cubeData.watchdog);
           g_lastMsgTime = now;
       }
       if (g_commLEDState)
@@ -358,11 +362,37 @@ void BlinkyPicoWCube::setup_wifi()
     if (g_chattyCathy) Serial.println("WiFi connected");
     if (g_chattyCathy) Serial.println("IP address: ");
     if (g_chattyCathy) Serial.println(WiFi.localIP());
+    if (g_chattyCathy)
+    {
+      byte mac[6];
+      WiFi.macAddress(mac);
+      Serial.print("MAC: ");
+      Serial.print(mac[0],HEX);
+      Serial.print(":");
+      Serial.print(mac[1],HEX);
+      Serial.print(":");
+      Serial.print(mac[2],HEX);
+      Serial.print(":");
+      Serial.print(mac[3],HEX);
+      Serial.print(":");
+      Serial.print(mac[4],HEX);
+      Serial.print(":");
+      Serial.println(mac[5],HEX);
+    }
+    g_noConnectionAttempts = 0; 
   }
   else
   {
+    g_noConnectionAttempts = g_noConnectionAttempts + 1;
     if (g_chattyCathy) Serial.println("");
-    if (g_chattyCathy) Serial.println("WiFi not connected");
+    if (g_chattyCathy) Serial.print("WiFi not connected after ");
+    if (g_chattyCathy) Serial.print(g_noConnectionAttempts);
+    if (g_chattyCathy) Serial.println(" attempts");
+    if (g_noConnectionAttempts > g_maxConnectionAttempts)
+    {
+      if (g_chattyCathy)  Serial.println("Too many wifi attempts. Rebooting...");
+      delay(20000);
+    }
   }
 }
 
@@ -404,12 +434,14 @@ boolean BlinkyPicoWCube::reconnect()
       if (g_chattyCathy) Serial.println("MQTT_CONNECTION_LOST");
       break;
     case -2:
-      if (g_chattyCathy) Serial.println("MQTT_CONNECT_FAILED");
       g_noMqttErrors = g_noMqttErrors + 1;
+      if (g_chattyCathy) Serial.print("Number of MQTT connection attempts: ");
+      if (g_chattyCathy) Serial.print(g_noMqttErrors);
       if (g_noMqttErrors > g_maxNoMqttErrors)
       {
-        WiFi.disconnect();
-        g_noMqttErrors = 0;
+        if (g_chattyCathy) Serial.println("");
+        if (g_chattyCathy) Serial.println("Too may attempts. Rebooting...");
+        delay(20000);
       }
       break;
     case -1:
