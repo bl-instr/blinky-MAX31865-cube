@@ -75,7 +75,6 @@ class BlinkyPicoWCube
     boolean       g_webPageRead = false;
     boolean       g_chattyCathy = false;
     SubscribeData g_subscribeData;
-    CubeData      g_cubeData;
     unsigned int  g_cubeDataSize;
     int           g_resetButtonPin = -1;
     boolean       g_resetButtonDownState = false;
@@ -117,35 +116,12 @@ class BlinkyPicoWCube
     void          setWirelesBlinkMs(int wirelessBlinkMs){g_wirelessBlinkMs = wirelessBlinkMs;};
     void          setMaxNoMqttErrors(int maxNoMqttErrors){g_maxNoMqttErrors = maxNoMqttErrors;};
     void          setMaxNoConnectionAttempts(int maxConnectionAttempts){g_maxConnectionAttempts = maxConnectionAttempts;};
-    static void   checkForSettings();
-    static void   publishToServer();
+    void          publishToServer();
 
 };
 BlinkyPicoWCube::BlinkyPicoWCube()
 {
-/*
-  g_init = true;
-  g_lastWirelessBlink = 0;
-  g_wifiStatus = 0;
-  g_wifiTimeout = WIFI_TIMEOUT;
-  g_wifiRetry = WIFI_RETRY;
-  g_wifiLastTry = 0;
-  g_mqttRetry = MQTT_RETRY;
-  g_mqttLastTry = 0;
-  g_publishNow = false;
-  g_commLEDPin = LED_BUILTIN;
-  g_commLEDBright = 255;
-  g_commLEDState = false;
-  g_wifiAccessPointMode = false;
-  g_webPageServed = false;
-  g_webPageRead = false;
-  g_chattyCathy = false;
-  g_resetButtonPin = -1;
-  g_resetButtonDownState = false;
-  g_resetTimeout = RESET_TIMEOUT;
-  g_resetButtonDownTime = 0;
-*/
-  g_cubeDataSize = (unsigned int) sizeof(g_cubeData);
+  g_cubeDataSize = sizeof(cubeData.buffer);
 }
 void BlinkyPicoWCube::setCommLEDPin(boolean ledState)
 {
@@ -170,32 +146,6 @@ void BlinkyPicoWCube::setCommLEDPin(boolean ledState)
 void BlinkyPicoWCube::loop()
 {
   rp2040.wdt_reset();;
-
-  int fifoSize = rp2040.fifo.available();
-  if (fifoSize > 0)
-  {
-    uint32_t command = 0;
-    while (fifoSize > 0)
-    {
-      command = rp2040.fifo.pop();
-      fifoSize = rp2040.fifo.available();
-      delay(1);
-    }
-    switch (command) 
-    {
-      case 1:
-        for (int ii = 0; ii < g_cubeDataSize; ++ii)
-        {
-          g_cubeData.buffer[ii] = cubeData.buffer[ii];
-        }
-        g_publishNow = true;
-        rp2040.fifo.push(command);
-        break;
-      default:
-        // statements
-        break;
-    }
-  }
   
   if (g_wifiAccessPointMode)
   {
@@ -237,7 +187,7 @@ void BlinkyPicoWCube::loop()
           g_commLEDState = true;
           setCommLEDPin(g_commLEDState);
           g_publishNow = false;
-          g_mqttClient.publish(g_mqttPublishTopic.c_str(), g_cubeData.buffer, g_cubeDataSize);
+          g_mqttClient.publish(g_mqttPublishTopic.c_str(), cubeData.buffer, g_cubeDataSize);
 //          if (g_chattyCathy) Serial.print("Publishing to MQTT ");
 //          if (g_chattyCathy) Serial.print(g_mqttPublishTopic);
 //          if (g_chattyCathy) Serial.print(" ");
@@ -761,25 +711,9 @@ void BlinkyPicoWCube::mqttCubeCallback(char* topic, byte* payload, unsigned int 
   if (g_chattyCathy) Serial.println("}");
   if (g_subscribeData.command == 1)
   {
-    uint32_t command = 2;
-    rp2040.fifo.push(command);
-    int fifoSize = 0;
-    while (fifoSize == 0)
-    {
-      fifoSize = rp2040.fifo.available();
-      delay(1);
-    }
-    rp2040.fifo.pop();
     cubeData.buffer[g_subscribeData.address * 2] = payload[2];
     cubeData.buffer[g_subscribeData.address * 2 + 1] = payload[3];
-    rp2040.fifo.push((uint32_t) g_subscribeData.address);
-    fifoSize = 0;
-    while (fifoSize == 0)
-    {
-      fifoSize = rp2040.fifo.available();
-      delay(1);
-    }
-    rp2040.fifo.pop();
+    handleNewSettingFromServer(g_subscribeData.address);
   }
   return;
 }
@@ -806,50 +740,9 @@ void BlinkyPicoWCube::wifiApButtonHandler()
     }
   }
 }
-void BlinkyPicoWCube::checkForSettings()
-{
-  int fifoSize = rp2040.fifo.available();
-  if (fifoSize > 0)
-  {
-    uint32_t command = 0;
-    while (fifoSize > 0)
-    {
-      command = rp2040.fifo.pop();
-      fifoSize = rp2040.fifo.available();
-      delay(1);
-    }
-    switch (command) 
-    {
-      case 2:
-        rp2040.fifo.push(command);
-        fifoSize = 0;
-        while (fifoSize == 0)
-        {
-          fifoSize = rp2040.fifo.available();
-          delay(1);
-        }
-        handleNewSettingFromServer((uint8_t) rp2040.fifo.pop());
-        rp2040.fifo.push(command);
-        break;
-      default:
-        // statements
-        break;
-    }
-  }
-  return;
-}
 void BlinkyPicoWCube::publishToServer()
 {
-  uint32_t command = 1;
-  rp2040.fifo.push(command);
-  int fifoSize = 0;
-  while (fifoSize == 0)
-  {
-    fifoSize = rp2040.fifo.available();
-    delay(1);
-  }
-  command = rp2040.fifo.pop();
-  return;
+  g_publishNow = true;
 }
 
 BlinkyPicoWCube BlinkyPicoWCube;
@@ -868,17 +761,10 @@ void BlinkyPicoWCubeWifiApButtonHandler()
 void loop() 
 {
   BlinkyPicoWCube.loop();
-}
-void loop1() 
-{
-  BlinkyPicoWCube::checkForSettings();
   cubeLoop();
-}
-void setup1() 
-{
-  setupCube();
 }
 void setup() 
 {
   setupServerComm();
+  setupCube();
 }

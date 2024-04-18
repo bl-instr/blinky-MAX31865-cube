@@ -169,7 +169,7 @@ void cubeLoop()
     cubeData.watchdog = cubeData.watchdog + 1;
     if (cubeData.watchdog > 32760) cubeData.watchdog= 0 ;
 
-    BlinkyPicoWCube::publishToServer();
+    BlinkyPicoWCube.publishToServer();
   }  
   if ((nowTime - lastMeasureTime) > measInterval)
   {
