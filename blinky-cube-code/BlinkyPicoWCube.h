@@ -760,7 +760,7 @@ void BlinkyPicoWCubeWifiApButtonHandler()
 
 void loop() 
 {
-  BlinkyPicoWCube.loop();
+  if(MQTT) BlinkyPicoWCube.loop();
   cubeLoop();
 }
 void setup() 

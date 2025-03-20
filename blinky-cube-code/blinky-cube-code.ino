@@ -1,3 +1,6 @@
+const boolean CHATTY_CATHY  = true;
+const boolean MQTT  = false;
+
 #include <SPI.h>
 
 union CubeData
@@ -104,22 +107,31 @@ uint16_t readSpi(int cspin)
 
 void setupServerComm()
 {
-// Optional setup to overide defaults
-//  Serial.begin(115200);
-  BlinkyPicoWCube.setChattyCathy(false);
-  BlinkyPicoWCube.setWifiTimeoutMs(20000);
-  BlinkyPicoWCube.setWifiRetryMs(20000);
-  BlinkyPicoWCube.setMqttRetryMs(3000);
-  BlinkyPicoWCube.setResetTimeoutMs(10000);
-  BlinkyPicoWCube.setHdwrWatchdogMs(8000);
-  BlinkyPicoWCube.setBlMqttKeepAlive(8);
-  BlinkyPicoWCube.setBlMqttSocketTimeout(4);
-  BlinkyPicoWCube.setMqttLedFlashMs(10);
-  BlinkyPicoWCube.setWirelesBlinkMs(100);
-  BlinkyPicoWCube.setMaxNoMqttErrors(5);
-  
-  // Must be included
-  BlinkyPicoWCube.init(commLEDPin, commLEDBright, resetButtonPin);
+  if (CHATTY_CATHY)
+  {
+    Serial.begin(115200);
+    delay(10000);
+    Serial.println("Starting setup");
+  }
+
+  // Optional setup to overide defaults
+  if(MQTT)
+  {
+    BlinkyPicoWCube.setChattyCathy(CHATTY_CATHY);
+    BlinkyPicoWCube.setWifiTimeoutMs(20000);
+    BlinkyPicoWCube.setWifiRetryMs(20000);
+    BlinkyPicoWCube.setMqttRetryMs(3000);
+    BlinkyPicoWCube.setResetTimeoutMs(10000);
+    BlinkyPicoWCube.setHdwrWatchdogMs(8000);
+    BlinkyPicoWCube.setBlMqttKeepAlive(8);
+    BlinkyPicoWCube.setBlMqttSocketTimeout(4);
+    BlinkyPicoWCube.setMqttLedFlashMs(10);
+    BlinkyPicoWCube.setWirelesBlinkMs(100);
+    BlinkyPicoWCube.setMaxNoMqttErrors(5);
+    
+    // Must be included
+    BlinkyPicoWCube.init(commLEDPin, commLEDBright, resetButtonPin);
+  }
 }
 
 float fraw1 = -1;
@@ -169,7 +181,7 @@ void cubeLoop()
     cubeData.watchdog = cubeData.watchdog + 1;
     if (cubeData.watchdog > 32760) cubeData.watchdog= 0 ;
 
-    BlinkyPicoWCube.publishToServer();
+    if(MQTT) BlinkyPicoWCube.publishToServer();
   }  
   if ((nowTime - lastMeasureTime) > measInterval)
   {
@@ -193,9 +205,12 @@ void cubeLoop()
     }
     cubeData.raw1 = (int16_t) fraw1;
     cubeData.raw2 = (int16_t) fraw2;
-//    Serial.print(cubeData.raw1);
-//    Serial.print(",");
-//    Serial.println(cubeData.raw2);
+    if (CHATTY_CATHY)
+    {
+      Serial.print(cubeData.raw1);
+      Serial.print(",");
+      Serial.println(cubeData.raw2);
+    }
   }  
   
 }
