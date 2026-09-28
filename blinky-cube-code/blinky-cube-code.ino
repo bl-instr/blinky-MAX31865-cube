@@ -1,10 +1,16 @@
-#define BLINKY_DIAG       0
-#define CUBE_DIAG         0
-#define COMM_LED_PIN     14
-#define RST_BUTTON_PIN    7
-#define POLYSIZE          7
 #include <BlinkyPicoW.h>
 #include <SPI.h>
+
+// --- Configuration Constants ---
+constexpr int BLINKY_DIAG    = 0;
+constexpr int CUBE_DIAG      = 0;
+constexpr int COMM_LED_PIN   = 14;
+constexpr int RST_BUTTON_PIN = 7;
+constexpr int NUMCHAN        = 2;
+
+constexpr int CS_PINS[NUMCHAN] = {17, 21};
+constexpr int RDY_PINS[NUMCHAN] = {15, 20};
+constexpr int POLYSIZE        = 7;
 
 struct CubeSetting
 {
@@ -18,33 +24,33 @@ struct CubeSetting
  *  fitType = 2  log10 T, lin   R
  *  fitType = 3  log10 T, log10 R  
  */
+  uint8_t fitType[NUMCHAN];
 
-  uint8_t fitTypeA;
-  uint8_t fitTypeB;
-
-  float refResA;
-  float resScaleA;
-  float tempScaleA;
-  float coefA[POLYSIZE];
-  float refResB;
-  float resScaleB;
-  float tempScaleB;
-  float coefB[POLYSIZE];
-
+  float refRes[NUMCHAN];
+  float resScale[NUMCHAN];
+  float tempScale[NUMCHAN];
+  float coef[NUMCHAN][POLYSIZE];
 };
-CubeSetting setting;
 
 struct CubeReading
 {
-  float resA;
-  float resB;
-  float tempA;
-  float tempB;
+  float res[NUMCHAN];
+  float temp[NUMCHAN];
 };
-CubeReading reading;
 
-int csPin1 = 17;
-int csPin2 = 21;
+struct CubeArm {
+  bool res[NUMCHAN];
+  bool temp[NUMCHAN];
+};
+
+// --- Global Variables ---
+CubeSetting setting;
+CubeReading reading;
+CubeReading readingLow;
+CubeReading readingHigh;
+CubeArm readingArm;
+
+
 unsigned long lastMeasureTime;
 unsigned long lastPublishTime;
 float nsample = 1.0;
@@ -52,6 +58,12 @@ uint16_t oldNsample;
 uint16_t oldMeasInterval;
 
 SPISettings spiSetting(4000000, MSBFIRST, SPI_MODE3);
+
+// --- Helper Functions ---
+template <typename T>
+inline bool outsideLimits(T current, T low, T high) {
+  return (current < low) || (current > high);
+}
 
 void intSpi(int cspin)
 {
@@ -150,49 +162,43 @@ void setupCube()
   setting.nsample = 1;
   oldNsample = setting.nsample;
   nsample = 1.0;
-  setting.fitTypeA = 0;
-  setting.fitTypeB = 0;
-  setting.refResA = 4302.0;
-  setting.refResB = 4302.0;
-  setting.resScaleA = 1000.0;
-  setting.resScaleB = 1000.0;
-  setting.tempScaleA = 293.0;
-  setting.tempScaleB = 293.0;
-  setting.coefA[0] = 1.0;
-  setting.coefB[0] = 1.0;
-  for (int ii = 1; ii < POLYSIZE; ++ii)
+  
+  for (int i = 0; i < NUMCHAN; ++i) 
   {
-    setting.coefA[ii] = 0.0;
-    setting.coefB[ii] = 0.0;
+    setting.fitType[i] = 0;
+    setting.refRes[i] = 4302.0;
+    setting.resScale[i] = 1000.0;
+    setting.tempScale[i] = 293.0;
+    setting.coef[i][0] = 1.0;
+    readingArm.res[i] = true;
+    readingArm.temp[i] = true;
+    for (int j = 1; j < POLYSIZE; ++j)
+    {
+      setting.coef[i][j] = 0.0;
+      reading.res[i] = 0.0;
+    }
+    pinMode(RDY_PINS[i], INPUT_PULLDOWN);
+    pinMode(CS_PINS[i], OUTPUT);
+    digitalWrite(CS_PINS[i], 1);
   }
-  reading.resA = 0.0;
-  reading.resB = 0.0;
     
-  pinMode(15, INPUT_PULLDOWN);
-  pinMode(20, INPUT_PULLDOWN);
-  pinMode(csPin1, OUTPUT);
-  digitalWrite(csPin1, 1);
-  pinMode(csPin2, OUTPUT);
-  digitalWrite(csPin2, 1);
-
   SPI.setRX(16);
-  SPI.setCS(csPin1);
+  SPI.setCS(CS_PINS[0]);
   SPI.setSCK(18);
   SPI.setTX(19);  
   SPI.begin(false);
-  SPI.setCS(csPin2);
+  SPI.setCS(CS_PINS[1]);
   SPI.begin(false);
-  intSpi(csPin1);
-  intSpi(csPin2);
+  intSpi(CS_PINS[0]);
+  intSpi(CS_PINS[1]);
   delay(100);
   
   lastPublishTime = millis();
   lastMeasureTime = millis();
 
-  reading.resA = (setting.refResA * readSpi(csPin1));
-  reading.resB = (setting.refResB * readSpi(csPin2));
-
+  for (int i = 0; i < NUMCHAN; ++i) reading.res[i] = (setting.refRes[i] * readSpi(CS_PINS[i]));
 }
+
 float calcTemp(float res, float resScale, float tempScale, uint8_t fitType, float* coef)
 {
   float fresPoly = res / resScale;
@@ -217,36 +223,65 @@ void loopCube()
   if ((now - lastPublishTime) > setting.publishInterval)
   {
     lastPublishTime = now;
-    reading.tempA = calcTemp(reading.resA, setting.resScaleA, setting.tempScaleA, setting.fitTypeA, setting.coefA);
-    reading.tempB = calcTemp(reading.resB, setting.resScaleB, setting.tempScaleB, setting.fitTypeB, setting.coefB);
-    boolean successful = BlinkyPicoW.publishCubeData((uint8_t*) &setting, (uint8_t*) &reading, false);
+    if (BlinkyPicoW.publishCubeData(reinterpret_cast<uint8_t*>(&setting), reinterpret_cast<uint8_t*>(&reading), false)) {
+      for (int i = 0; i < NUMCHAN; ++i) {
+        if (!outsideLimits(reading.temp[i], readingLow.temp[i], readingHigh.temp[i])) {
+          readingArm.temp[i] = true;
+        }
+      }
+    }
   }
   if ((now - lastMeasureTime) > ((unsigned long) setting.measInterval))
   {
     lastMeasureTime = now;
-
-    reading.resA = reading.resA + ((setting.refResA * readSpi(csPin1)) - reading.resA) / nsample;
-    reading.resB = reading.resB + ((setting.refResB * readSpi(csPin2)) - reading.resB) / nsample;
+    for (int i = 0; i < NUMCHAN; ++i)
+    {
+      reading.res[i] = reading.res[i] + ((setting.refRes[i] * readSpi(CS_PINS[i])) - reading.res[i]) / nsample;
+      reading.temp[i] = calcTemp(reading.res[i], setting.resScale[i], setting.tempScale[i], setting.fitType[i], setting.coef[i]);
+      if (BlinkyPicoW.isInitialized()) 
+      {  
+        if (outsideLimits(reading.temp[i], readingLow.temp[i], readingHigh.temp[i])) 
+        {
+          if (readingArm.temp[i]) {
+            const bool published = BlinkyPicoW.publishCubeData(
+              reinterpret_cast<uint8_t*>(&setting), 
+              reinterpret_cast<uint8_t*>(&reading), 
+              true
+            );
+            
+            readingArm.temp[i] = !published;
+            if (published) {
+              lastPublishTime = now;
+            }
+          }
+        }
+      }
+    }
   }  
-  if (BlinkyPicoW.retrieveCubeSetting((uint8_t*) &setting) )
+  // 3. Check for New MQTT Settings
+  const bool newSettings = BlinkyPicoW.retrieveCubeSetting(
+    reinterpret_cast<uint8_t*>(&setting), 
+    reinterpret_cast<uint8_t*>(&readingLow), 
+    reinterpret_cast<uint8_t*>(&readingHigh)
+  );
+
+  if (newSettings) 
   {
-      if (setting.publishInterval < 1000) setting.publishInterval = 1000;
-      if (oldNsample != setting.nsample)
-      {
-        oldNsample = setting.nsample;
-        if (setting.nsample < 1) setting.nsample = 1;
-        nsample = (float) setting.nsample;
-        reading.resA = (setting.refResA * readSpi(csPin1));
-        reading.resB = (setting.refResB * readSpi(csPin2));
-        lastMeasureTime = now;
-      }
-      if (oldMeasInterval != setting.measInterval)
-      {
-        oldMeasInterval = setting.measInterval;
-        if (setting.measInterval < 200) setting.measInterval = 200;
-        reading.resA = (setting.refResA * readSpi(csPin1));
-        reading.resB = (setting.refResB * readSpi(csPin2));
-        lastMeasureTime = now;
-      }
+    if (setting.publishInterval < 1000) setting.publishInterval = 1000;
+    if (oldNsample != setting.nsample)
+    {
+      oldNsample = setting.nsample;
+      if (setting.nsample < 1) setting.nsample = 1;
+      nsample = (float) setting.nsample;
+      for (int i = 0; i < NUMCHAN; ++i) reading.res[i] = (setting.refRes[i] * readSpi(CS_PINS[i]));
+      lastMeasureTime = now;
+    }
+    if (oldMeasInterval != setting.measInterval)
+    {
+      oldMeasInterval = setting.measInterval;
+      if (setting.measInterval < 200) setting.measInterval = 200;
+      for (int i = 0; i < NUMCHAN; ++i) reading.res[i] = (setting.refRes[i] * readSpi(CS_PINS[i]));
+      lastMeasureTime = now;
+    }
   }
 }
